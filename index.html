@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>The Red Button</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0e1719;--ink:#eef3f1;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e1719}}
+:root[data-theme="dark"]{--bg:#0e1719}
+*{box-sizing:inherit}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:"Bricolage Grotesque",system-ui,sans-serif;overflow:hidden;-webkit-user-select:none;user-select:none}
+#stage,#stage canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#vig{position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at 50% 55%,transparent 45%,rgba(0,0,0,.55) 100%)}
+#grain{position:fixed;inset:0;pointer-events:none;opacity:.09;mix-blend-mode:overlay;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='160' height='160' filter='url(%23n)'/></svg>")}
+#say{position:fixed;left:0;right:0;top:calc(14% + env(safe-area-inset-top,0px));text-align:center;font-size:clamp(22px,5vw,36px);font-weight:600;letter-spacing:.01em;padding:0 24px;opacity:0;filter:blur(8px);transform:translateY(10px);transition:opacity .5s,filter .5s,transform .5s;pointer-events:none;text-shadow:0 2px 24px rgba(0,0,0,.6)}
+#say.on{opacity:1;filter:blur(0);transform:none}
+#dbgBtn{position:fixed;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));font:inherit;font-size:13px;background:rgba(0,0,0,.35);color:var(--ink);border:1px solid rgba(255,255,255,.3);border-radius:6px;padding:4px 10px;opacity:.6;cursor:pointer;z-index:2}
+#dbg{position:fixed;right:12px;bottom:calc(52px + env(safe-area-inset-bottom,0px));max-width:min(300px,86%);background:rgba(10,16,17,.92);border:1px solid rgba(255,255,255,.25);border-radius:8px;padding:10px 12px;font-size:13px;line-height:1.45;display:none;max-height:50%;overflow:auto;z-index:2}
+#dbg.on{display:block}
+#dbg button{font:inherit;font-size:12px;margin-top:6px;cursor:pointer}
+</style>
+</head>
+<body>
+<div id="stage"></div><div id="vig"></div><div id="grain"></div>
+<div id="say" aria-live="polite"></div>
+<button id="dbgBtn">debug</button><div id="dbg"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/* ============ 1. RENDERER (Three.js). Engine only calls the R.* interface below. ============ */
+const R=(()=>{
+const $=id=>document.getElementById(id), T=THREE, reduce=matchMedia('(prefers-reduced-motion:reduce)').matches;
+const E={io:k=>k<.5?4*k*k*k:1-Math.pow(-2*k+2,3)/2,out:k=>1-Math.pow(1-k,3),sine:k=>-(Math.cos(Math.PI*k)-1)/2,lin:k=>k};
+const tw=[],go=(dur,f,e=E.io,done)=>tw.push({t:0,dur:reduce?.01:dur,f,e,done});
+class Spring{constructor(x,k=260,c=14){this.x=x;this.v=0;this.t=x;this.k=k;this.c=c}step(dt){const n=Math.ceil(dt/.008),h=dt/n;for(let i=0;i<n;i++){this.v+=((this.t-this.x)*this.k-this.v*this.c)*h;this.x+=this.v*h}}}
+/* sound */
+let ac;const sfx=(f0,f1,d,type='sine',v=.15)=>{try{ac=ac||new AudioContext();const t=ac.currentTime,o=ac.createOscillator(),g=ac.createGain();o.type=type;o.frequency.setValueAtTime(f0,t);o.frequency.exponentialRampToValueAtTime(f1,t+d);g.gain.setValueAtTime(v,t);g.gain.exponentialRampToValueAtTime(.001,t+d);o.connect(g).connect(ac.destination);o.start();o.stop(t+d)}catch(e){}};
+/* renderer + scene */
+const renderer=new T.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.outputEncoding=T.sRGBEncoding;
+renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=.95;
+renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFSoftShadowMap;
+$('stage').appendChild(renderer.domElement);
+const scene=new T.Scene(),FOG=new T.Color(0x0e1719);scene.fog=new T.FogExp2(FOG,.05);
+const cam=new T.PerspectiveCamera(36,1,.1,120);
+/* procedural textures */
+const tex=(w,draw,rx=1,ry=1,srgb)=>{const c=document.createElement('canvas');c.width=c.height=w;const g=c.getContext('2d');draw(g,w);const t=new T.CanvasTexture(c);t.wrapS=t.wrapT=T.RepeatWrapping;t.repeat.set(rx,ry);t.anisotropy=8;if(srgb)t.encoding=T.sRGBEncoding;return t};
+const speck=(g,w,n,a)=>{for(let i=0;i<n;i++){const v=Math.random()*255|0;g.fillStyle=`rgba(${v},${v},${v},${a*Math.random()})`;g.fillRect(Math.random()*w,Math.random()*w,1+Math.random()*2,1+Math.random()*2)}};
+const concrete=tex(512,(g,w)=>{g.fillStyle='#808080';g.fillRect(0,0,w,w);for(let i=0;i<50;i++){const x=Math.random()*w,y=Math.random()*w,r=30+Math.random()*90,gr=g.createRadialGradient(x,y,0,x,y,r),v=Math.random()>.5?255:0;gr.addColorStop(0,`rgba(${v},${v},${v},.09)`);gr.addColorStop(1,'rgba(128,128,128,0)');g.fillStyle=gr;g.fillRect(x-r,y-r,2*r,2*r)}speck(g,w,7000,.22)},10,10);
+const brushed=tex(256,(g,w)=>{g.fillStyle='#808080';g.fillRect(0,0,w,w);for(let i=0;i<1400;i++){const v=Math.random()*255|0;g.fillStyle=`rgba(${v},${v},${v},.18)`;g.fillRect(0,Math.random()*w,w,1+Math.random()*1.5)}},6,1);
+const woodTex=tex(256,(g,w)=>{g.fillStyle='#5a4030';g.fillRect(0,0,w,w);for(let i=0;i<180;i++){const l=Math.random()>.5;g.fillStyle=l?'rgba(150,110,80,.22)':'rgba(30,18,10,.3)';g.fillRect(Math.random()*w,0,1+Math.random()*4,w)}speck(g,w,500,.06)},1,1,true);
+/* environment for reflections */
+const envS=new T.Scene();{const c=document.createElement('canvas');c.width=2;c.height=256;const g=c.getContext('2d'),gr=g.createLinearGradient(0,0,0,256);gr.addColorStop(0,'#33484d');gr.addColorStop(.55,'#0c1517');gr.addColorStop(1,'#030606');g.fillStyle=gr;g.fillRect(0,0,2,256);
+ envS.add(new T.Mesh(new T.SphereGeometry(20,32,16),new T.MeshBasicMaterial({map:new T.CanvasTexture(c),side:T.BackSide})));
+ const box=(w,h,x,y,z,col)=>{const m=new T.Mesh(new T.PlaneGeometry(w,h),new T.MeshBasicMaterial({color:new T.Color(col,col*.95,col*.9),side:T.DoubleSide}));m.position.set(x,y,z);m.lookAt(0,0,0);envS.add(m)};
+ box(12,5,0,12,2,7);box(2,9,-12,3,4,4);box(2,9,12,3,-2,3)}
+scene.environment=new T.PMREMGenerator(renderer).fromScene(envS,.02).texture;
+/* backdrop shader */
+const mkc=h=>new T.Color(h);
+const back=new T.Mesh(new T.SphereGeometry(60,32,16),new T.ShaderMaterial({side:T.BackSide,depthWrite:false,fog:false,uniforms:{top:{value:mkc(0x050809)},hor:{value:FOG},t:{value:0}},
+ vertexShader:'varying vec3 vP;void main(){vP=normalize(position);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
+ fragmentShader:'uniform vec3 top,hor;uniform float t;varying vec3 vP;float h(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5);}void main(){float y=vP.y*.5+.5;vec3 c=mix(hor,top,smoothstep(.5,.85,y));c+=(h(gl_FragCoord.xy+t)-.5)*.01;gl_FragColor=linearToOutputTexel(vec4(c,1.));}'}));
+back.renderOrder=-1;scene.add(back);
+/* lights */
+const key=new T.DirectionalLight(0xfff0e0,1.3);key.position.set(5,9,6);key.castShadow=true;key.shadow.mapSize.set(2048,2048);key.shadow.radius=5;key.shadow.bias=-.0004;
+Object.assign(key.shadow.camera,{left:-9,right:9,top:9,bottom:-9,near:1,far:30});scene.add(key);
+const rim=new T.DirectionalLight(0x5aa0ff,1.4);rim.position.set(-6,4,-7);scene.add(rim);
+scene.add(new T.HemisphereLight(0x6f8a90,0x0a0f10,.35));
+const glowL=new T.PointLight(0xff3b22,1.5,7,2);glowL.position.set(0,.9,0);scene.add(glowL);
+/* floor */
+const floor=new T.Mesh(new T.CircleGeometry(30,96),new T.MeshStandardMaterial({color:0x1a2527,roughness:.85,metalness:0,bumpMap:concrete,bumpScale:.25,envMapIntensity:.3}));
+floor.rotation.x=-Math.PI/2;floor.receiveShadow=true;scene.add(floor);
+/* glow + ripple decal shader */
+const dU={t:{value:0},rip:{value:-99},glow:{value:.6},col:{value:mkc(0xff3b22)}};
+const decal=new T.Mesh(new T.PlaneGeometry(12,12),new T.ShaderMaterial({transparent:true,depthWrite:false,blending:T.AdditiveBlending,uniforms:dU,
+ vertexShader:'varying vec2 vU;void main(){vU=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
+ fragmentShader:'uniform float t,rip,glow;uniform vec3 col;varying vec2 vU;void main(){float d=length(vU-.5)*2.;float r=t-rip;float ring=exp(-pow(d*6.-r*7.,2.)*2.2)*exp(-r*1.3)*step(0.,r);float a=exp(-d*d*9.)*glow*.45+ring*.55;gl_FragColor=linearToOutputTexel(vec4(col*a,a));}'}));
+decal.rotation.x=-Math.PI/2;decal.position.y=.012;scene.add(decal);
+/* the button */
+const btnG=new T.Group();scene.add(btnG);
+const housing=new T.Mesh(new T.LatheGeometry([[0,0],[1.9,0],[1.9,.3],[1.78,.42],[1.5,.46],[1.3,.44],[1.25,.3],[1.25,.18],[0,.18]].map(p=>new T.Vector2(...p)),96),
+ new T.MeshStandardMaterial({color:0x353d41,metalness:.95,roughness:.8,roughnessMap:brushed,side:T.DoubleSide}));
+const collar=new T.Mesh(new T.TorusGeometry(1.27,.05,16,96),new T.MeshStandardMaterial({color:0xcfd8dc,metalness:1,roughness:.18}));collar.rotation.x=Math.PI/2;collar.position.y=.44;
+const capMat=new T.MeshPhysicalMaterial({color:new T.Color(0xe0301e).convertSRGBToLinear(),roughness:.2,clearcoat:1,clearcoatRoughness:.05,emissive:new T.Color(0xff2210).convertSRGBToLinear(),emissiveIntensity:.05,side:T.DoubleSide});
+const cap=new T.Mesh(new T.LatheGeometry([[0,.62],[.35,.61],[.62,.57],[.84,.48],[.97,.33],[1,.16],[1,0]].map(p=>new T.Vector2(...p)),96),capMat);cap.position.y=.3;
+[housing,collar,cap].forEach(m=>{m.castShadow=true;m.receiveShadow=true;btnG.add(m)});
+/* door */
+const doorG=new T.Group(),woodM=new T.MeshStandardMaterial({map:woodTex,roughness:.75,metalness:0,envMapIntensity:.4});
+const bx=(w,h,d,x,y,z,m=woodM)=>{const o=new T.Mesh(new T.BoxGeometry(w,h,d),m);o.position.set(x,y,z);o.castShadow=o.receiveShadow=true;doorG.add(o);return o};
+bx(.22,3.2,.4,-.91,1.6,0);bx(.22,3.2,.4,.91,1.6,0);bx(2.04,.22,.4,0,3.2,0);
+const lightM=new T.MeshBasicMaterial({color:new T.Color(0xffc060).convertSRGBToLinear(),toneMapped:false});const lightP=new T.Mesh(new T.PlaneGeometry(1.6,3.1),lightM);lightP.position.set(0,1.55,-.1);doorG.add(lightP);
+const pivot=new T.Group();pivot.position.set(-.8,0,.1);doorG.add(pivot);
+const panel=new T.Mesh(new T.BoxGeometry(1.6,3.1,.12),woodM);panel.position.set(.8,1.55,0);panel.castShadow=true;pivot.add(panel);
+const knob=new T.Mesh(new T.SphereGeometry(.07,16,12),new T.MeshStandardMaterial({color:0xd9b25a,metalness:1,roughness:.25}));knob.position.set(1.4,1.5,.1);pivot.add(knob);
+const doorL=new T.PointLight(0xffd28a,0,9,2);doorL.position.set(0,1.6,1.2);doorG.add(doorL);
+doorG.position.set(-4.2,-4,-2.4);doorG.rotation.y=.5;doorG.visible=false;scene.add(doorG);
+/* particles */
+const N=180,pp=new Float32Array(N*3),pv=new Float32Array(N*3),pl=new Float32Array(N),pa=new Float32Array(N),ps=new Float32Array(N),pc=new Float32Array(N*3);
+const pg=new T.BufferGeometry();pg.setAttribute('position',new T.BufferAttribute(pp,3));pg.setAttribute('a',new T.BufferAttribute(pa,1));pg.setAttribute('s',new T.BufferAttribute(ps,1));pg.setAttribute('c',new T.BufferAttribute(pc,3));
+const pts=new T.Points(pg,new T.ShaderMaterial({transparent:true,depthWrite:false,uniforms:{px:{value:520}},
+ vertexShader:'attribute float a,s;attribute vec3 c;varying float vA;varying vec3 vC;uniform float px;void main(){vA=a;vC=c;vec4 mv=modelViewMatrix*vec4(position,1.);gl_PointSize=s*px/-mv.z;gl_Position=projectionMatrix*mv;}',
+ fragmentShader:'varying float vA;varying vec3 vC;void main(){float d=length(gl_PointCoord-.5)*2.;gl_FragColor=linearToOutputTexel(vec4(vC,smoothstep(1.,0.,d)*vA));}'}));
+pts.frustumCulled=false;scene.add(pts);let pi=0;
+const emit=(p,n,sp,col,up=.6)=>{for(let j=0;j<n;j++){const i=pi++%N,a=Math.random()*6.283,s=sp*(.3+Math.random());pp.set([p.x+Math.cos(a)*.3,p.y,p.z+Math.sin(a)*.3],i*3);pv.set([Math.cos(a)*s,Math.random()*sp*up,Math.sin(a)*s],i*3);pl[i]=1;ps[i]=.12+Math.random()*.25;pc.set(col,i*3)}};
+const DUST=[.72,.8,.78],SPARK=[1,.35,.2],WARM=[1,.82,.5];
+/* state */
+let roll=0,dolly=0,lift=0,hopY=0,busy=false,dodges=0,shake=0,pulse=0,hovered=false,held=false,flipped=false,doorOpenK=0;
+const capS=new Spring(0,520,32),sq=new Spring(0,260,13),par={x:0,y:0,tx:0,ty:0},cb={};
+const moods={playful:0xff3b22,nervous:0xff9a3a,smug:0xd02aff,lonely:0x4a8bff};
+const ripple=()=>dU.rip.value=dU.t.value;
+const bump=a=>{shake=Math.max(shake,reduce?0:a)};
+/* actions */
+function hop(to,done){busy=true;const f=btnG.position.clone();sq.x=.28;sfx(200,420,.2,'sine',.08);
+ setTimeout(()=>go(.62,(e,k)=>{btnG.position.x=f.x+(to.x-f.x)*e;btnG.position.z=f.z+(to.z-f.z)*e;hopY=Math.sin(Math.PI*k)*1.1;btnG.rotation.y=e*6.283},E.sine,()=>{busy=false;hopY=0;sq.v=7;ripple();bump(.08);sfx(110,50,.15,'triangle',.25);emit(btnG.position,14,1.6,DUST);done&&done()}),130)}
+const rnd=()=>{let x,z;do{x=(Math.random()*2-1)*3.6;z=Math.random()*3.4-2.2}while(Math.hypot(x-btnG.position.x,z-btnG.position.z)<2.2||Math.hypot(x+4.2,z+2.4)<1.8);return{x,z}};
+function down(){
+ if(busy)return;
+ if(dodges>0){dodges--;hop(dodges?rnd():{x:0,z:0},()=>{if(!dodges&&cb.caught)cb.caught()});return}
+ held=true;capS.t=-.2;ripple();pulse=Math.max(pulse,.5);bump(.05);sfx(190,60,.12,'triangle',.22);sfx(1400,300,.03,'square',.035);
+ emit({x:btnG.position.x,y:.5,z:btnG.position.z},10,1.8,SPARK,1.2);cb.press&&cb.press()}
+function up(){if(!held)return;held=false;capS.t=hovered?.05:0;sfx(320,520,.06,'triangle',.08)}
+const ray=new T.Raycaster(),mv=new T.Vector2();
+const hit=e=>{mv.set(e.clientX/innerWidth*2-1,-(e.clientY/innerHeight)*2+1);ray.setFromCamera(mv,cam);return ray.intersectObjects([cap,housing],false).length>0};
+const cv=renderer.domElement;
+cv.addEventListener('pointerdown',e=>{if(hit(e)){e.preventDefault();down()}});
+addEventListener('pointerup',up);
+addEventListener('pointermove',e=>{par.tx=e.clientX/innerWidth*2-1;par.ty=e.clientY/innerHeight*2-1;const h=hit(e);if(h!==hovered){hovered=h;cv.style.cursor=h?'pointer':'default';if(!held)capS.t=h?.05:0}});
+addEventListener('keydown',e=>{if(!e.repeat&&(e.key===' '||e.key==='Enter')&&e.target===document.body){e.preventDefault();down()}});
+addEventListener('keyup',e=>{if(e.key===' '||e.key==='Enter')up()});
+function resize(){renderer.setSize(innerWidth,innerHeight);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();pts.material.uniforms.px.value=innerHeight*renderer.getPixelRatio()*.62}
+addEventListener('resize',resize);resize();
+/* loop */
+const clk=new T.Clock(),LK=new T.Vector3(0,.9,0);
+function frame(){
+ const dt=Math.min(clk.getDelta(),.033),t=dU.t.value+=dt;back.material.uniforms.t.value=t;
+ for(let i=tw.length-1;i>=0;i--){const a=tw[i];a.t+=dt;const k=Math.min(1,a.t/a.dur);a.f(a.e(k),k);if(k>=1){tw.splice(i,1);a.done&&a.done()}}
+ capS.step(dt);sq.step(dt);par.x+=(par.tx-par.x)*.05;par.y+=(par.ty-par.y)*.05;
+ cap.position.y=.3+Math.min(.08,capS.x);
+ btnG.position.y=hopY+lift+Math.sin(t*1.6)*.015*(lift>0?1:0);
+ btnG.scale.set(1+sq.x*.45,1-sq.x,1+sq.x*.45);
+ pulse*=Math.pow(.04,dt);shake*=Math.pow(.003,dt);
+ capMat.emissiveIntensity=.06+.03*Math.sin(t*2)+pulse*.7;glowL.intensity=.7+.15*Math.sin(t*2)+pulse*4+(held?.5:0);
+ glowL.position.x=btnG.position.x;glowL.position.z=btnG.position.z;glowL.position.y=.35+hopY;dU.glow.value=.55+.12*Math.sin(t*2)+pulse*1.2;
+ decal.position.x=btnG.position.x;decal.position.z=btnG.position.z;
+ const dist=7.4*(1+Math.max(0,1-cam.aspect)*.85),c=Math.cos(roll);
+ cam.position.set(par.x*.7*c+(Math.random()-.5)*shake,2.7+par.y*.35*c+dolly*1.6+(Math.random()-.5)*shake,dist+dolly*1.5);
+ cam.up.set(-Math.sin(roll),Math.cos(roll),0);cam.lookAt(LK);
+ const g=-2.2*Math.cos(roll);
+ for(let i=0;i<N;i++){if(pl[i]>0){pl[i]-=dt*.75;pv[i*3+1]+=g*dt*.6;pp[i*3]+=pv[i*3]*dt;pp[i*3+1]+=pv[i*3+1]*dt;pp[i*3+2]+=pv[i*3+2]*dt;pv[i*3]*=.985;pv[i*3+2]*=.985;pa[i]=Math.max(0,pl[i])*.55}else pa[i]=0}
+ pg.attributes.position.needsUpdate=pg.attributes.a.needsUpdate=pg.attributes.s.needsUpdate=pg.attributes.c.needsUpdate=true;
+ renderer.render(scene,cam);requestAnimationFrame(frame)}
+frame();
+/* public interface */
+let sayT;const sayEl=$('say');
+return{
+ onPress:f=>cb.press=f,onCaught:f=>cb.caught=f,
+ say(t,ms=2600){clearTimeout(sayT);sayEl.classList.remove('on');if(!t)return;setTimeout(()=>{sayEl.textContent=t;sayEl.classList.add('on')},120);sayT=setTimeout(()=>sayEl.classList.remove('on'),ms)},
+ setFlip(b,instant){if(b===flipped&&!instant)return;flipped=b;const from=roll,to=b?Math.PI:0;
+  if(instant){roll=to;return}sfx(90,380,1.2,'sine',.12);go(1.6,(e,k)=>{roll=from+(to-from)*e;dolly=Math.sin(Math.PI*k);lift=Math.sin(Math.PI*k)*1.2},E.io,()=>{lift=0;dolly=0;sq.v=6;emit(btnG.position,18,1.8,DUST);bump(.1)})},
+ flee(n=3){dodges=n;hop(rnd())},
+ pushBack(){held=true;capS.t=-.2;sfx(120,60,.3,'sine',.2);
+  setTimeout(()=>{held=false;capS.t=0;capS.v=22;pulse=1.6;ripple();bump(.35);sq.v=-4;lift=.01;emit({x:btnG.position.x,y:.5,z:btnG.position.z},34,3,SPARK,2);sfx(45,200,.6,'sawtooth',.22)},650)},
+ knock(){bump(.22);sfx(95,38,.22,'sine',.55);setTimeout(()=>sfx(85,36,.2,'sine',.4),240);emit({x:-4.2,y:.1,z:-2.4},14,1.4,DUST);glowL.intensity+=2},
+ door(mode){
+  if(mode==='show'){doorG.visible=true;sfx(60,35,1.2,'sine',.4);bump(.3);go(2,(e)=>{doorG.position.y=-4+4*e},E.out,()=>{emit({x:-4.2,y:.1,z:-2.4},40,2.4,DUST);bump(.15)})}
+  if(mode==='open'){sfx(70,120,1.4,'sawtooth',.06);go(1.8,(e)=>{pivot.rotation.y=-1.9*e;doorL.intensity=4*e},E.io,()=>emit({x:-3.5,y:.4,z:-1.6},30,2,WARM))}},
+ setPresent(s){this.setFlip(s.tags.has('gravity_flipped'),true);if(s.tags.has('door_present')){doorG.visible=true;doorG.position.y=0}if(s.tags.has('door_open')){pivot.rotation.y=-1.9;doorL.intensity=4}},
+ setMood(m){const c=new T.Color(moods[m]||moods.playful).convertSRGBToLinear();dU.col.value.copy(c);glowL.color.copy(c)},
+ debug(h){$('dbg').innerHTML=h}
+}})();
+
+/* ============ 2. MEMORY ============ */
+const KEY='redbutton:v2';
+const Store={load(){try{return JSON.parse(localStorage.getItem(KEY))}catch(e){return null}},save(d){try{localStorage.setItem(KEY,JSON.stringify(d))}catch(e){}},wipe(){try{localStorage.removeItem(KEY)}catch(e){}}};
+let saved=Store.load();
+const M=saved?.M||{first:Date.now(),last:Date.now(),visits:0,total:0,counts:{}};
+const S={tags:new Set(saved?.tags||[]),n:saved?.n||{knocks:0,doorPresses:0,mentionedDoor:0,nothingRun:0,sinceBig:99},hist:saved?.hist||[],since:saved?.since||{}};
+const persist=()=>{M.last=Date.now();Store.save({M,tags:[...S.tags],n:S.n,hist:S.hist,since:S.since})};
+
+/* ============ 3. PERSONALITY ============ */
+function mood(){
+  const hrsAway=(Date.now()-M.last)/3.6e6;
+  const score={playful:.5+Object.keys(M.counts).length*.08,nervous:(S.tags.has('thing_below')?1.2:0)+(S.tags.has('suspicious')?.8:0),smug:M.total/50,lonely:hrsAway/10};
+  return Object.entries(score).sort((a,b)=>b[1]-a[1])[0][0];
+}
+const LINES={
+  nothing:{playful:['…','Nothing. Really.'],nervous:['Did you hear that? No. Nothing.'],smug:['Not everything is for you.'],lonely:['Still here.']},
+  suspicious:{playful:['Nothing again. Suspicious?'],nervous:['Nothing. That is worse.'],smug:['You keep checking. Cute.'],lonely:['Nothing. Stay anyway.']},
+  flee:{playful:['Catch me!'],nervous:['Nope nope nope.'],smug:['Try and keep up.'],lonely:['Come find me?']},
+  caught:{playful:['Fine. You win.'],nervous:['Okay. Okay. Okay.'],smug:['Lucky.'],lonely:['You came after me.']},
+  gravity:{playful:['Whee.'],nervous:['That wasn’t me.'],smug:['Look up. Or down.'],lonely:['Everything left, even the floor.']},
+  gravityBack:{playful:['Back to normal. Mostly.'],nervous:['Better. Slightly.'],smug:['Boring, but fine.'],lonely:['Down again.']},
+  pressback:{playful:[''],nervous:[''],smug:[''],lonely:['']},
+  knock:{playful:['knock.'],nervous:['…knock.'],smug:['knock.'],lonely:['knock.']},
+  door:{playful:['That wasn’t there before.'],nervous:['I did not build that.'],smug:['Go on, then.'],lonely:['It’s for you.']},
+  doorHint:{playful:['Aren’t you curious about the door?'],nervous:['Please don’t open it. Or do.'],smug:['The door. You’re ignoring it.'],lonely:['You never look at the door.']},
+  doorOpen:{playful:['That’s as far as this build goes.'],nervous:['Light. That’s all I know.'],smug:['See? Worth it.'],lonely:['It was waiting for you.']}
+};
+const pick=a=>a[Math.floor(Math.random()*a.length)];
+const talk=(k,ms)=>{const t=pick(LINES[k][mood()]);if(t)R.say(t,ms)};
+
+/* ============ 4. CONSEQUENCES ============ */
+const has=t=>S.tags.has(t);
+const C=[
+ {id:'nothing',fam:'quiet',w:2,cd:0,big:false,req:()=>true,play(){S.n.nothingRun++;if(S.n.nothingRun>=2){S.tags.add('suspicious');talk('suspicious')}else talk('nothing')}},
+ {id:'flee',fam:'button',w:2,cd:6,big:true,req:()=>!has('button_fled'),play(){S.tags.add('button_fled');R.flee(3);talk('flee')}},
+ {id:'gravity',fam:'world',w:2,cd:8,big:true,req:()=>true,play(){const f=!has('gravity_flipped');f?S.tags.add('gravity_flipped'):S.tags.delete('gravity_flipped');R.setFlip(f);talk(f?'gravity':'gravityBack')}},
+ {id:'pressback',fam:'mystery',w:3,cd:30,big:true,req:()=>M.total>=15&&!has('thing_below'),play(){S.tags.add('thing_below');R.pushBack();R.say('',1)}},
+ {id:'knock',fam:'mystery',w:4,cd:3,big:false,req:()=>has('thing_below')&&!has('door_present'),play(){S.n.knocks++;R.knock();talk('knock',1400)}},
+ {id:'door',fam:'mystery',w:6,cd:5,big:true,req:()=>has('thing_below')&&!has('door_present')&&S.n.knocks>=3,play(){S.tags.add('door_present');R.door('show');talk('door',3200)}}
+];
+R.onCaught(()=>{S.tags.delete('button_fled');talk('caught');persist()});
+
+/* ============ 5. ENGINE ============ */
+function choose(){
+  const pool=C.filter(c=>c.req()&&(S.since[c.id]===undefined||M.total-S.since[c.id]>=c.cd));
+  const quietBias=S.n.sinceBig<2;
+  const weighted=pool.map(c=>{let w=c.w/(1+(M.counts[c.id]||0)*.12);if(quietBias)w*=c.big?.15:3;if(c.id==='nothing')w+=Math.max(0,3-S.n.sinceBig)*.4;return[c,w]});
+  let r=Math.random()*weighted.reduce((a,[,w])=>a+w,0);
+  for(const[c,w]of weighted){if((r-=w)<=0)return c}
+  return C[0];
+}
+function onPress(){
+  M.total++;R.setMood(mood());
+  if(has('door_present')&&!has('door_open')){
+    S.n.doorPresses++;
+    if(S.n.doorPresses===8&&!S.n.mentionedDoor){S.n.mentionedDoor=1;talk('doorHint',3200);persist();return}
+    if(S.n.doorPresses>=20){S.tags.add('door_open');R.door('open');talk('doorOpen',4000);persist();return}
+  }
+  const c=choose();
+  if(c.id!=='nothing')S.n.nothingRun=0;
+  c.play();
+  M.counts[c.id]=(M.counts[c.id]||0)+1;S.since[c.id]=M.total;
+  S.n.sinceBig=c.big?0:S.n.sinceBig+1;
+  S.hist=[...S.hist,c.id].slice(-20);
+  persist();renderDebug();
+}
+R.onPress(onPress);
+
+/* ============ 6. BOOT ============ */
+R.setPresent(S);R.setMood(mood());
+if(M.visits>0){
+  const h=(Date.now()-M.last)/3.6e6,d=Math.floor(h/24);
+  setTimeout(()=>R.say(h<1?'Back already.':d<1?'You came back.':d===1?'A day. You came back.':`${d} days. You came back.`,3600),900);
+}else setTimeout(()=>R.say('Press it.',2400),900);
+M.visits++;persist();
+addEventListener('visibilitychange',persist);
+
+/* ============ 7. DEBUG ============ */
+function renderDebug(){
+  R.debug(`<b>presses</b> ${M.total} · <b>mood</b> ${mood()}<br><b>tags</b> ${[...S.tags].join(', ')||'none'}<br><b>recent</b> ${S.hist.slice(-8).join(' → ')||'—'}<br><b>first press</b> ${new Date(M.first).toLocaleDateString()}<br><button id="reset">reset world</button>`);
+  const b=document.getElementById('reset');if(b)b.onclick=()=>{Store.wipe();location.reload()};
+}
+document.getElementById('dbgBtn').onclick=()=>{document.getElementById('dbg').classList.toggle('on');renderDebug()};
+</script>
+</body>
+</html>
