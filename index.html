@@ -35,6 +35,7 @@ const E={io:k=>k<.5?4*k*k*k:1-Math.pow(-2*k+2,3)/2,out:k=>1-Math.pow(1-k,3),sine
 const tw=[],go=(dur,f,e=E.io,done)=>tw.push({t:0,dur:reduce?.01:dur,f,e,done});
 class Spring{constructor(x,k=260,c=14){this.x=x;this.v=0;this.t=x;this.k=k;this.c=c}step(dt){const n=Math.ceil(dt/.008),h=dt/n;for(let i=0;i<n;i++){this.v+=((this.t-this.x)*this.k-this.v*this.c)*h;this.x+=this.v*h}}}
 let ac;const sfx=(f0,f1,d,type='sine',v=.15)=>{try{ac=ac||new AudioContext();const t=ac.currentTime,o=ac.createOscillator(),g=ac.createGain();o.type=type;o.frequency.setValueAtTime(f0,t);o.frequency.exponentialRampToValueAtTime(Math.max(20,f1),t+d);g.gain.setValueAtTime(v,t);g.gain.exponentialRampToValueAtTime(.001,t+d);o.connect(g).connect(ac.destination);o.start();o.stop(t+d)}catch(e){}};
+const swell=(f0,f1,d,v,type='sine')=>{try{ac=ac||new AudioContext();const t=ac.currentTime,o=ac.createOscillator(),g=ac.createGain();o.type=type;o.frequency.setValueAtTime(f0,t);o.frequency.linearRampToValueAtTime(f1,t+d);g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(v,t+d*.85);g.gain.exponentialRampToValueAtTime(.0001,t+d);o.connect(g).connect(ac.destination);o.start();o.stop(t+d)}catch(e){}};
 const lin=h=>new THREE.Color(h).convertSRGBToLinear();
 const renderer=new T.WebGLRenderer({antialias:devicePixelRatio<1.5,powerPreference:'high-performance'});
 renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));renderer.outputEncoding=T.sRGBEncoding;
@@ -47,10 +48,10 @@ const cam=new T.PerspectiveCamera(34,1,.1,80);
 const envS=new T.Scene();{const sb=(w,h,x,y,z,v)=>{const m=new T.Mesh(new T.PlaneGeometry(w,h),new T.MeshBasicMaterial({color:new T.Color(v,v,v*1.1),side:T.DoubleSide}));m.position.set(x,y,z);m.lookAt(0,0,0);envS.add(m)};sb(8,8,0,12,0,9);sb(2,10,-12,4,3,1.2);sb(2,10,12,4,-3,1.2)}
 scene.environment=new T.PMREMGenerator(renderer).fromScene(envS,.02).texture;
 /* the spotlight + its volumetric cone */
-const spot=new T.SpotLight(0xffe9cf,3.6,0,.27,1,1);spot.position.set(0,10,0);spot.castShadow=true;spot.shadow.mapSize.set(1024,1024);spot.shadow.bias=-.0005;spot.shadow.camera.near=4;spot.shadow.camera.far=16;scene.add(spot,spot.target);
-const cone=new T.Mesh(new T.ConeGeometry(3,10,40,1,true),new T.ShaderMaterial({transparent:true,depthWrite:false,side:T.DoubleSide,blending:T.AdditiveBlending,fog:false,uniforms:{cp:{value:cam.position},k:{value:1},t:{value:0}},
+const spot=new T.SpotLight(0xffe9cf,3.6,0,.27,.18,1);spot.position.set(0,10,0);spot.castShadow=true;spot.shadow.mapSize.set(1024,1024);spot.shadow.bias=-.0005;spot.shadow.camera.near=4;spot.shadow.camera.far=16;scene.add(spot,spot.target);const rimS=new T.SpotLight(0x9fc4ff,2.4,0,.2,1,1);rimS.position.set(-2,4.5,-6.5);scene.add(rimS);
+const cone=new T.Mesh(new T.ConeGeometry(3,10,40,1,true),new T.ShaderMaterial({transparent:true,depthWrite:false,side:T.DoubleSide,blending:T.AdditiveBlending,fog:false,uniforms:{cp:{value:cam.position},k:{value:1},t:{value:0},rv:{value:0}},
  vertexShader:'varying vec3 vN,vW;varying float vY;void main(){vY=position.y;vN=normalize(mat3(modelMatrix)*normal);vec4 w=modelMatrix*vec4(position,1.);vW=w.xyz;gl_Position=projectionMatrix*viewMatrix*w;}',
- fragmentShader:'uniform vec3 cp;uniform float k,t;varying vec3 vN,vW;varying float vY;float H(float x){return fract(sin(x)*43758.5453);}float n(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);float a=dot(i,vec3(1.,57.,113.));return mix(mix(mix(H(a),H(a+1.),f.x),mix(H(a+57.),H(a+58.),f.x),f.y),mix(mix(H(a+113.),H(a+114.),f.x),mix(H(a+170.),H(a+171.),f.x),f.y),f.z);}void main(){vec3 v=normalize(cp-vW);float f=pow(abs(dot(normalize(vN),v)),1.5);float h=(vY+5.)/10.;float haze=.55+.8*n(vW*vec3(.9,.5,.9)+vec3(0.,-t*.12,t*.05))+.35*n(vW*2.3+t*.07);float a=f*(.1+.9*h)*smoothstep(0.,.22,h)*k*haze*.3;gl_FragColor=linearToOutputTexel(vec4(vec3(1.,.93,.82)*a,a));}'}));
+ fragmentShader:'uniform vec3 cp;uniform float k,t,rv;varying vec3 vN,vW;varying float vY;float H(float x){return fract(sin(x)*43758.5453);}float n(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);float a=dot(i,vec3(1.,57.,113.));return mix(mix(mix(H(a),H(a+1.),f.x),mix(H(a+57.),H(a+58.),f.x),f.y),mix(mix(H(a+113.),H(a+114.),f.x),mix(H(a+170.),H(a+171.),f.x),f.y),f.z);}void main(){vec3 v=normalize(cp-vW);float f=pow(abs(dot(normalize(vN),v)),1.5);float h=(vY+5.)/10.;float haze=.55+.8*n(vW*vec3(.9,.5,.9)+vec3(0.,-t*.12,t*.05))+.35*n(vW*2.3+t*.07);float a=f*(.1+.9*h)*smoothstep(0.,.22,h)*k*haze*.3*smoothstep(1.-rv-.04,1.-rv,h);gl_FragColor=linearToOutputTexel(vec4(vec3(1.,.93,.82)*a,a));}'}));
 cone.position.y=-5;const coneG=new T.Group();coneG.position.y=10;coneG.add(cone);scene.add(coneG);
 /* floating dust motes caught in the light */
 const NM=170,mr=new Float32Array(NM*3);for(let i=0;i<NM*3;i++)mr[i]=Math.random();
@@ -59,7 +60,7 @@ const motes=new T.Points(mg,new T.ShaderMaterial({transparent:true,depthWrite:fa
  vertexShader:'attribute vec3 r;uniform float t,px,pull,kk;varying float vA;void main(){float y=mod(r.x*10.+t*(.12+r.z*.15),10.);float rad=(10.-y)/10.*2.6*sqrt(r.y)*(1.-pull*.85);float a=r.x*40.+r.z*6.283+t*.15*(r.z-.5);vec4 mv=modelViewMatrix*vec4(cos(a)*rad,y,sin(a)*rad,1.);gl_PointSize=(.05+r.z*.07)*px/-mv.z;vA=kk*smoothstep(0.,1.,y)*smoothstep(10.,8.,y)*(.35+.4*sin(t*1.7+r.y*30.)+.4);gl_Position=projectionMatrix*mv;}',
  fragmentShader:'varying float vA;void main(){float d=length(gl_PointCoord-.5)*2.;gl_FragColor=linearToOutputTexel(vec4(vec3(.8,.9,1.)*vA*.6,smoothstep(1.,0.,d)*vA));}'}));
 motes.frustumCulled=false;scene.add(motes);
-scene.add(new T.HemisphereLight(0x3a4a66,0x000000,.02));
+const hemi=new T.HemisphereLight(0x3a4a66,0x000000,.02);scene.add(hemi);
 const glowL=new T.PointLight(0xff2a14,2.2,9,2);glowL.position.set(0,.5,0);scene.add(glowL);
 /* floor: dark glossy, fades into the void */
 const floor=new T.Mesh(new T.CircleGeometry(40,96),new T.MeshStandardMaterial({color:0x070a0b,roughness:.4,metalness:.5,envMapIntensity:.2}));
@@ -76,12 +77,16 @@ const glowTex=(()=>{const c=document.createElement('canvas');c.width=c.height=12
 const spr=(s,o=1,c=0xffffff)=>{const m=new T.Sprite(new T.SpriteMaterial({map:glowTex,color:c,blending:T.AdditiveBlending,depthWrite:false,transparent:true,fog:false,opacity:o}));m.scale.set(s,s,1);return m};
 /* the button */
 const btnG=new T.Group();scene.add(btnG);
-const housing=new T.Mesh(new T.LatheGeometry([[0,0],[1.9,0],[1.9,.3],[1.78,.42],[1.5,.46],[1.3,.44],[1.25,.3],[1.25,.18],[0,.18]].map(p=>new T.Vector2(...p)),96),new T.MeshStandardMaterial({color:0x14181a,metalness:.9,roughness:.32,side:T.DoubleSide}));
+const housing=new T.Mesh(new T.LatheGeometry([[0,0],[1.9,0],[1.9,.3],[1.78,.42],[1.5,.46],[1.3,.44],[1.25,.3],[1.25,.18],[0,.18]].map(p=>new T.Vector2(...p)),96),new T.MeshStandardMaterial({color:0x3b4247,metalness:.85,roughness:.38,side:T.DoubleSide}));
 const collar=new T.Mesh(new T.TorusGeometry(1.27,.05,16,96),new T.MeshStandardMaterial({color:0xcfd8dc,metalness:1,roughness:.15}));collar.rotation.x=Math.PI/2;collar.position.y=.44;
-const capMat=new T.MeshStandardMaterial({color:lin(0xd0150a),roughness:.22,metalness:.1,emissive:lin(0xff1a0a),emissiveIntensity:.6,side:T.DoubleSide});
-const cap=new T.Mesh(new T.LatheGeometry([[0,.7],[.4,.69],[.7,.62],[.9,.5],[.99,.34],[1.03,.16],[1.03,0]].map(p=>new T.Vector2(...p)),96),capMat);cap.position.y=.3;
+const capMat=new T.MeshPhysicalMaterial({color:lin(0xd0150a),roughness:.35,metalness:0,clearcoat:1,clearcoatRoughness:.04,emissive:lin(0xff1a0a),emissiveIntensity:.6,side:T.DoubleSide});
+const cap=new T.Mesh(new T.LatheGeometry([[0,.66],[.55,.65],[.85,.6],[1,.5],[1.08,.34],[1.1,.16],[1.05,.02],[.85,0]].map(p=>new T.Vector2(...p)),96),capMat);cap.position.y=.3;
 [housing,collar,cap].forEach(m=>{m.castShadow=true;m.receiveShadow=true;btnG.add(m)});
-const halo=spr(5,.6);halo.position.y=.9;btnG.add(halo);
+const hz=(()=>{const c=document.createElement('canvas');c.width=256;c.height=64;const g=c.getContext('2d');g.fillStyle='#e6b400';g.fillRect(0,0,256,64);g.fillStyle='#121212';for(let x=-64;x<320;x+=32){g.beginPath();g.moveTo(x,64);g.lineTo(x+16,64);g.lineTo(x+48,0);g.lineTo(x+32,0);g.fill()}const t=new T.CanvasTexture(c);t.wrapS=T.RepeatWrapping;t.repeat.set(3,1);t.encoding=T.sRGBEncoding;t.anisotropy=4;return t})();
+const band=new T.Mesh(new T.CylinderGeometry(1.92,1.92,.2,72,1,true),new T.MeshStandardMaterial({map:hz,roughness:.55,metalness:.1,envMapIntensity:.5}));band.position.y=.13;band.castShadow=band.receiveShadow=true;btnG.add(band);
+const chrome=new T.MeshStandardMaterial({color:0xcfd8dc,metalness:1,roughness:.2});
+for(let i=0;i<8;i++){const a=i*Math.PI/4+.39,b=new T.Mesh(new T.SphereGeometry(.075,12,8),chrome);b.scale.y=.6;b.position.set(Math.cos(a)*1.65,.47,Math.sin(a)*1.65);b.castShadow=true;btnG.add(b)}
+const halo=spr(3.4,.5);halo.position.y=.9;btnG.add(halo);
 /* orbit orbs */
 const orbs=[...Array(7)].map((_,i)=>{const o=spr(.8,1,[0xff6a4a,0xffd0a0,0xff3a2a][i%3]);o.visible=false;scene.add(o);return o});
 /* door (lit only by its own warm light) */
@@ -103,8 +108,9 @@ const pts=new T.Points(pg,new T.ShaderMaterial({transparent:true,depthWrite:fals
 pts.frustumCulled=false;scene.add(pts);let pi=0;
 const emit=(p,n,sp,col,up=.6)=>{for(let j=0;j<n;j++){const i=pi++%N,a=Math.random()*6.283,s=sp*(.3+Math.random());pp.set([p.x+Math.cos(a)*.3,p.y,p.z+Math.sin(a)*.3],i*3);pv.set([Math.cos(a)*s,Math.random()*sp*up,Math.sin(a)*s],i*3);pl[i]=1;ps[i]=.1+Math.random()*.22;pc.set(col,i*3)}};
 const DUST=[.5,.6,.7],SPARK=[1,.3,.12],WARM=[1,.8,.45];
+const envMats=[[floor.material,.2],[dais.material,.5],[housing.material,1],[collar.material,1],[capMat,1],[band.material,.5],[chrome,1],[woodM,.3]];
 /* state */
-let roll=0,dolly=0,lift=0,hopY=0,busy=false,dodges=0,shake=0,pulse=0,heat=0,hovered=false,held=false,flipped=false,spotK=0,litK=0,mt=0,ts=1,beamK=1,flashK=0,combo=0,lastP=0,introD=4,doorB=0,gk=1,lampX=0;
+let roll=0,dolly=0,lift=0,hopY=0,busy=false,dodges=0,shake=0,pulse=0,heat=0,hovered=false,held=false,flipped=false,spotK=0,litK=0,mt=0,ts=1,beamK=1,flashK=0,combo=0,lastP=0,introK=0,rv=0,doorB=0,gk=1,lampX=0;
 const capS=new Spring(0,520,32),sq=new Spring(0,260,13),fovS=new Spring(0,300,16),par={x:0,y:0,tx:0,ty:0},cb={};
 const moods={playful:0xff2a14,nervous:0xff8a2a,smug:0xd02aff,lonely:0x3a7bff};
 const ripple=()=>dU.rip.value=dU.t.value;
@@ -139,37 +145,47 @@ addEventListener('resize',resize);resize();
 /* loop */
 const flashEl=$('flash');let fF=0,fps=60;const Q={n:0,s:0},clk=new T.Clock(),LK=new T.Vector3(0,.65,0);
 function frame(){
- const raw=clk.getDelta();ts=Math.min(1,ts+raw*1.3);const dt=Math.min(raw,.033)*ts,t=dU.t.value+=dt;mt+=dt*(1+heat*5);const mu=motes.material.uniforms;mu.t.value=mt;mu.pull.value=heat*heat;mu.kk.value=Math.min(1.5,spotK*beamK);cone.material.uniforms.t.value=t;
- if(++Q.n>20&&Q.n<=110){Q.s+=raw;if(Q.n===110&&Q.s/90>.021){renderer.setPixelRatio(1);renderer.shadowMap.enabled=false;spot.castShadow=false;scene.traverse(o=>{if(o.material)o.material.needsUpdate=true});resize()}}
+ const raw=clk.getDelta();ts=Math.min(1,ts+raw*1.3);const dt=Math.min(raw,.033)*ts,t=dU.t.value+=dt;mt+=dt*(1+heat*5);const mu=motes.material.uniforms;mu.t.value=mt;mu.pull.value=heat*heat;mu.kk.value=Math.min(1.5,spotK*beamK);cone.material.uniforms.t.value=t;cone.material.uniforms.rv.value=rv;
+ if(litK>.9&&++Q.n>20&&Q.n<=110){Q.s+=raw;if(Q.n===110&&Q.s/90>.021){renderer.setPixelRatio(1);renderer.shadowMap.enabled=false;spot.castShadow=false;scene.traverse(o=>{if(o.material)o.material.needsUpdate=true});resize()}}
  for(let i=tw.length-1;i>=0;i--){const a=tw[i];a.t+=dt;const k=Math.min(1,a.t/a.dur);a.f(a.e(k),k);if(k>=1){tw.splice(i,1);a.done&&a.done()}}
  capS.step(dt);sq.step(dt);fovS.step(dt);par.x+=(par.tx-par.x)*.05;par.y+=(par.ty-par.y)*.05;
  heat=Math.max(0,heat-dt*.4);beamK+=(1-beamK)*Math.min(1,dt*1.6);flashK*=Math.pow(.01,raw);fps=fps*.95+.05/Math.max(raw,.001);doorL.intensity=doorB*litK;lightP.material.color.copy(lightC).multiplyScalar(litK);pulse*=Math.pow(.04,dt);shake*=Math.pow(.003,dt);
  cap.position.y=.3+Math.min(.08,capS.x);
  const hb=1+.012*Math.sin(t*2.2)+.02*pulse;btnG.position.y=hopY+lift;btnG.scale.set((1+sq.x*.45)*gk*hb,(1-sq.x)*gk*hb,(1+sq.x*.45)*gk*hb);
- capMat.emissiveIntensity=litK*(.55+.18*Math.sin(t*2.2)+heat*1.6+pulse*1.2);
- halo.material.opacity=litK*Math.min(1,.5+.1*Math.sin(t*2.2)+heat*.4+pulse*.35);halo.scale.setScalar(5+heat*2.5+pulse*2);
+ capMat.emissiveIntensity=litK*(.4+.15*Math.sin(t*2.2)+heat*1.6+pulse*1.2);
+ halo.material.opacity=litK*Math.min(1,.28+.08*Math.sin(t*2.2)+heat*.4+pulse*.35);halo.scale.setScalar(3.4+heat*2.5+pulse*2);
  glowL.intensity=litK*(1.6+.3*Math.sin(t*2.2)+heat*3+pulse*5+(held?1:0));glowL.position.set(btnG.position.x,.5+hopY,btnG.position.z);
  dU.glow.value=litK*(.7+.15*Math.sin(t*2.2)+heat*1.1+pulse);decal.position.x=btnG.position.x;decal.position.z=btnG.position.z;
- spot.intensity=3.6*spotK*beamK*(1+heat*.25);cone.material.uniforms.k.value=spotK*(.6+.4*beamK)*(1+heat*.6);
+ spot.intensity=3.6*spotK*beamK*(1+heat*.25);cone.material.uniforms.k.value=spotK*(.6+.4*beamK)*(1+heat*.6);rimS.intensity=2.4*Math.min(spotK,1.2);{const eK=Math.min(1,spotK);envMats.forEach(([m,b])=>m.envMapIntensity=b*eK);hemi.intensity=.02*spotK}
  spot.position.x=lampX;coneG.position.x=lampX;coneG.rotation.z=-Math.atan(lampX/10);
- const dist=10.5*(1+Math.max(0,1-cam.aspect)*.7)+introD,c=Math.cos(roll);
- cam.position.set((par.x*.7+Math.sin(t*.2)*.35)*c+(Math.random()-.5)*shake,2.4+par.y*.3*c+dolly*1.6+(Math.random()-.5)*shake,dist+dolly*1.5);
- cam.up.set(-Math.sin(roll),Math.cos(roll),0);cam.lookAt(LK);cam.fov=30+fovS.x;cam.updateProjectionMatrix();
+ const dist=(11.5+12*(1-introK))*(1+Math.max(0,1-cam.aspect)*.7),c=Math.cos(roll);
+ cam.position.set((par.x*.7+Math.sin(t*.2)*.35)*c+(Math.random()-.5)*shake,2.4+(1-introK)*.9+par.y*.3*c+dolly*1.6+(Math.random()-.5)*shake,dist+dolly*1.5);
+ LK.y=.65+(1-introK)*3.6;cam.up.set(-Math.sin(roll),Math.cos(roll),0);cam.lookAt(LK);cam.fov=30+fovS.x;cam.updateProjectionMatrix();
  const g=-2.2*Math.cos(roll);let alive=0;
  for(let i=0;i<N;i++){if(pl[i]>0){alive=1;pl[i]-=dt*.8;pv[i*3+1]+=g*dt*.6;pp[i*3]+=pv[i*3]*dt;pp[i*3+1]+=pv[i*3+1]*dt;pp[i*3+2]+=pv[i*3+2]*dt;pv[i*3]*=.985;pv[i*3+2]*=.985;pa[i]=Math.max(0,pl[i])*.9}else pa[i]=0}
  if(alive||pts.userData.d){pg.attributes.position.needsUpdate=pg.attributes.a.needsUpdate=pg.attributes.s.needsUpdate=pg.attributes.c.needsUpdate=true;pts.userData.d=alive}
  {const fl=Math.round(flashK*50)/50;if(fl!==fF){fF=fl;flashEl.style.opacity=Math.min(1,fl)}}renderer.render(scene,cam);requestAnimationFrame(frame)}
-function intro(){const at=(ms,f)=>setTimeout(f,ms);
- at(1200,()=>go(5,e=>introD=4*(1-e),E.io));
- at(1500,()=>{sfx(55,35,.5,'sine',.5);spotK=.5});at(1640,()=>spotK=0);at(1780,()=>{spotK=.85;sfx(900,150,.04,'square',.04)});at(1900,()=>spotK=.1);
- at(2100,()=>{sfx(48,30,1,'sine',.6);go(1.3,e=>spotK=e,E.out)});
- at(2900,()=>{sfx(120,500,1.2,'sine',.08);go(1.8,e=>litK=e,E.io,()=>{ripple();bump(.1);emit(wp(0,.8,0),24,2.4,SPARK,1.6)})})}
-intro();renderer.compile(scene,cam);frame();
+function begin(long,done){
+ const at=(ms,f)=>setTimeout(f,ms);let started=false;
+ sayEl.textContent='Click anywhere to begin';sayEl.classList.add('on');
+ const start=()=>{if(started)return;started=true;sayEl.classList.remove('on');try{ac=ac||new AudioContext();ac.resume()}catch(e){}
+  const D=long?6300:2200;
+  if(long){swell(38,52,5,.12);at(1300,()=>sfx(2400,1800,.015,'square',.03));
+   [2600,3450,4200,4850].forEach((m,i)=>{at(m,()=>sfx(62,34,.2,'sine',.18+i*.07));at(m+150,()=>sfx(55,32,.18,'sine',.1+i*.05))});
+   at(4100,()=>swell(220,1500,1.5,.05,'sawtooth'))}
+  else swell(60,90,1.8,.06);
+  at(D,()=>{sfx(2000,400,.03,'square',.14);sfx(90,38,.3,'square',.28);sfx(50,28,1.3,'sine',.7);sfx(130,110,.5,'sawtooth',.05);swell(100,100,6,.02);
+   spotK=1.7;flashK=.1;bump(.12);go(.2,e=>rv=e,E.out);
+   at(140,()=>spotK=.55);at(210,()=>spotK=1.35);at(420,()=>go(.5,e=>spotK=1.35-.35*e,E.out));
+   at(1900,()=>{swell(110,330,2.4,.07);go(2.6,e=>litK=e,E.io,()=>{ripple();bump(.1);emit(wp(0,.8,0),24,2.4,SPARK,1.6);done&&done()})});
+   at(2300,()=>go(7,e=>introK=e,E.io))})};
+ addEventListener('pointerdown',start,{once:true});addEventListener('keydown',start,{once:true})}
+renderer.compile(scene,cam);frame();
 /* public interface */
 let sayT;const sayEl=$('say');function sayF(t,ms=2600){clearTimeout(sayT);sayEl.classList.remove('on');if(!t)return;setTimeout(()=>{sayEl.textContent=t;sayEl.classList.add('on')},120);sayT=setTimeout(()=>sayEl.classList.remove('on'),ms)}
 return{
  onPress:f=>cb.press=f,onCaught:f=>cb.caught=f,
- say:sayF,fps:()=>Math.round(fps)+(spot.castShadow?'':' lite'),
+ say:sayF,begin,fps:()=>Math.round(fps)+(spot.castShadow?'':' lite'),
  setFlip(b,instant){if(b===flipped&&!instant)return;flipped=b;const from=roll,to=b?Math.PI:0;
   if(instant){roll=to;return}sfx(90,380,1.2,'sine',.14);go(1.6,(e,k)=>{roll=from+(to-from)*e;dolly=Math.sin(Math.PI*k);lift=Math.sin(Math.PI*k)*1.2},E.io,()=>{lift=0;dolly=0;sq.v=6;emit(btnG.position,24,2,SPARK);bump(.12)})},
  flee(n=3){dodges=n;hop(rnd())},
@@ -261,10 +277,8 @@ R.onPress(onPress);
 
 /* ============ 6. BOOT ============ */
 R.setPresent(S);R.setMood(mood());
-if(M.visits>0){
-  const h=(Date.now()-M.last)/3.6e6,d=Math.floor(h/24);
-  setTimeout(()=>R.say(h<1?'Back already.':d<1?'You came back.':d===1?'A day. You came back.':`${d} days. You came back.`,3600),4300);
-}else setTimeout(()=>R.say('Press it.',2600),4300);
+let _m='Press it.';if(M.visits>0){const h=(Date.now()-M.last)/3.6e6,d=Math.floor(h/24);_m=h<1?'Back already.':d<1?'You came back.':d===1?'A day. You came back.':`${d} days. You came back.`}
+R.begin(M.visits===0,()=>R.say(_m,3200));
 M.visits++;persist();
 addEventListener('visibilitychange',persist);
 
