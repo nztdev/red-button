@@ -43,7 +43,7 @@ renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=1;
 renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFShadowMap;
 $('stage').appendChild(renderer.domElement);
 const scene=new T.Scene();scene.background=new T.Color(0x000000);scene.fog=new T.FogExp2(0x000000,.03);
-const cam=new T.PerspectiveCamera(34,1,.1,80);
+const cam=new T.PerspectiveCamera(34,1,.1,400);
 /* reflections: one big softbox overhead, two dim strips */
 const envS=new T.Scene();{const sb=(w,h,x,y,z,v)=>{const m=new T.Mesh(new T.PlaneGeometry(w,h),new T.MeshBasicMaterial({color:new T.Color(v,v,v*1.1),side:T.DoubleSide}));m.position.set(x,y,z);m.lookAt(0,0,0);envS.add(m)};sb(8,8,0,12,0,9);sb(2,10,-12,4,3,1.2);sb(2,10,12,4,-3,1.2)}
 scene.environment=new T.PMREMGenerator(renderer).fromScene(envS,.02).texture;
@@ -57,8 +57,8 @@ cone.position.y=-5;const coneG=new T.Group();coneG.position.y=10;coneG.add(cone)
 const NM=170,mr=new Float32Array(NM*3);for(let i=0;i<NM*3;i++)mr[i]=Math.random();
 const mg=new T.BufferGeometry();mg.setAttribute('position',new T.BufferAttribute(new Float32Array(NM*3),3));mg.setAttribute('r',new T.BufferAttribute(mr,3));
 const motes=new T.Points(mg,new T.ShaderMaterial({transparent:true,depthWrite:false,blending:T.AdditiveBlending,uniforms:{t:{value:0},px:{value:600},pull:{value:0},kk:{value:0}},
- vertexShader:'attribute vec3 r;uniform float t,px,pull,kk;varying float vA;void main(){float y=mod(r.x*10.+t*(.12+r.z*.15),10.);float rad=(10.-y)/10.*2.6*sqrt(r.y)*(1.-pull*.85);float a=r.x*40.+r.z*6.283+t*.15*(r.z-.5);vec4 mv=modelViewMatrix*vec4(cos(a)*rad,y,sin(a)*rad,1.);gl_PointSize=(.05+r.z*.07)*px/-mv.z;vA=kk*smoothstep(0.,1.,y)*smoothstep(10.,8.,y)*(.35+.4*sin(t*1.7+r.y*30.)+.4);gl_Position=projectionMatrix*mv;}',
- fragmentShader:'varying float vA;void main(){float d=length(gl_PointCoord-.5)*2.;gl_FragColor=linearToOutputTexel(vec4(vec3(.8,.9,1.)*vA*.6,smoothstep(1.,0.,d)*vA));}'}));
+ vertexShader:'attribute vec3 r;uniform float t,px,pull,kk;varying float vA;void main(){float y=mod(r.x*10.+t*(.12+r.z*.15),10.);float rad=(10.-y)/10.*2.6*sqrt(r.y)*(1.-pull*.85);float a=r.x*40.+r.z*6.283+t*.15*(r.z-.5);vec4 mv=modelViewMatrix*vec4(cos(a)*rad,y,sin(a)*rad,1.);gl_PointSize=(.05+r.z*.07)*px/-mv.z;vA=kk*smoothstep(0.,1.,y)*(1.-smoothstep(8.,10.,y))*(.35+.4*sin(t*1.7+r.y*30.)+.4);gl_Position=projectionMatrix*mv;}',
+ fragmentShader:'varying float vA;void main(){float d=length(gl_PointCoord-.5)*2.;gl_FragColor=linearToOutputTexel(vec4(vec3(.8,.9,1.)*vA*.6,(1.-smoothstep(0.,1.,d))*vA));}'}));
 motes.frustumCulled=false;scene.add(motes);
 const hemi=new T.HemisphereLight(0x3a4a66,0x000000,.02);scene.add(hemi);
 const glowL=new T.PointLight(0xff2a14,2.2,9,2);glowL.position.set(0,.5,0);scene.add(glowL);
@@ -104,13 +104,16 @@ const N=200,pp=new Float32Array(N*3),pv=new Float32Array(N*3),pl=new Float32Arra
 const pg=new T.BufferGeometry();pg.setAttribute('position',new T.BufferAttribute(pp,3));pg.setAttribute('a',new T.BufferAttribute(pa,1));pg.setAttribute('s',new T.BufferAttribute(ps,1));pg.setAttribute('c',new T.BufferAttribute(pc,3));
 const pts=new T.Points(pg,new T.ShaderMaterial({transparent:true,depthWrite:false,blending:T.AdditiveBlending,uniforms:{px:{value:520}},
  vertexShader:'attribute float a,s;attribute vec3 c;varying float vA;varying vec3 vC;uniform float px;void main(){vA=a;vC=c;vec4 mv=modelViewMatrix*vec4(position,1.);gl_PointSize=s*px/-mv.z;gl_Position=projectionMatrix*mv;}',
- fragmentShader:'varying float vA;varying vec3 vC;void main(){float d=length(gl_PointCoord-.5)*2.;gl_FragColor=linearToOutputTexel(vec4(vC*vA,smoothstep(1.,0.,d)*vA));}'}));
+ fragmentShader:'varying float vA;varying vec3 vC;void main(){float d=length(gl_PointCoord-.5)*2.;gl_FragColor=linearToOutputTexel(vec4(vC*vA,(1.-smoothstep(0.,1.,d))*vA));}'}));
 pts.frustumCulled=false;scene.add(pts);let pi=0;
 const emit=(p,n,sp,col,up=.6)=>{for(let j=0;j<n;j++){const i=pi++%N,a=Math.random()*6.283,s=sp*(.3+Math.random());pp.set([p.x+Math.cos(a)*.3,p.y,p.z+Math.sin(a)*.3],i*3);pv.set([Math.cos(a)*s,Math.random()*sp*up,Math.sin(a)*s],i*3);pl[i]=1;ps[i]=.1+Math.random()*.22;pc.set(col,i*3)}};
 const DUST=[.5,.6,.7],SPARK=[1,.3,.12],WARM=[1,.8,.45];
+const skyU={t:{value:0},k:{value:0},fd:{value:0},sd:{value:new T.Vector3(.14,.075,-1).normalize()}};
+const sky=new T.Mesh(new T.SphereGeometry(150,48,24),new T.ShaderMaterial({side:T.BackSide,depthWrite:false,fog:false,uniforms:skyU,vertexShader:'varying vec3 vW;void main(){vW=(modelMatrix*vec4(position,1.)).xyz;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',fragmentShader:'uniform float t,k,fd;uniform vec3 sd;varying vec3 vW;float h(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}float n(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(h(i),h(i+vec2(1.,0.)),f.x),mix(h(i+vec2(0.,1.)),h(i+vec2(1.,1.)),f.x),f.y);}float fbm(vec2 p){float a=.5,s=0.;for(int i=0;i<5;i++){s+=a*n(p);p=p*2.03+17.;a*=.5;}return s;}void main(){vec3 d=normalize(vW-cameraPosition);float y=max(d.y,0.);float sdot=max(dot(d,normalize(sd)),0.);vec3 zen=mix(vec3(.05,.08,.22),vec3(.01,.015,.06),k),mid=mix(vec3(.5,.3,.5),vec3(.1,.07,.2),k),hor=mix(vec3(1.,.5,.2),vec3(.3,.1,.12),k);vec3 c=mix(hor,mid,smoothstep(0.,.16,y));c=mix(c,zen,smoothstep(.1,.7,y));c+=vec3(1.,.55,.25)*pow(sdot,6.)*.55*(1.-k*.7)+vec3(1.,.8,.5)*pow(sdot,80.)*.9*(1.-k*.6);c+=vec3(1.,.9,.7)*smoothstep(.9992,.9996,sdot)*3.*(1.-k);vec2 p=d.xz/(d.y+.12)*1.5+vec2(t*.012,t*.004);float cl=smoothstep(.5,.8,fbm(p))*smoothstep(0.,.1,d.y);vec3 lit=mix(vec3(.28,.16,.32),vec3(1.,.55,.3),clamp(pow(sdot,2.)*.9+.15,0.,1.))*(1.-k*.65);c=mix(c,lit,cl*.88);if(d.y<0.)c=mix(vec3(.03,.02,.05),hor*.3,smoothstep(-.3,0.,d.y))*(1.-k*.6);float st=step(.9985,h(floor(d.xz/(abs(d.y)+1.2)*220.)))*smoothstep(.3,.9,k)*(1.-cl)*step(0.,d.y);c+=vec3(st);gl_FragColor=linearToOutputTexel(vec4(c*fd,1.));}'}));
+sky.visible=false;sky.renderOrder=-1;scene.add(sky);const sun=new T.DirectionalLight(0xffa860,0);scene.add(sun);
 const envMats=[[floor.material,.2],[dais.material,.5],[housing.material,1],[collar.material,1],[capMat,1],[band.material,.5],[chrome,1],[woodM,.3]];
 /* state */
-let roll=0,dolly=0,lift=0,hopY=0,busy=false,dodges=0,shake=0,pulse=0,heat=0,hovered=false,held=false,flipped=false,spotK=0,litK=0,mt=0,ts=1,beamK=1,flashK=0,combo=0,lastP=0,introK=0,rv=0,doorB=0,gk=1,lampX=0;
+let roll=0,dolly=0,lift=0,hopY=0,busy=false,dodges=0,shake=0,pulse=0,heat=0,hovered=false,held=false,flipped=false,spotK=0,litK=0,mt=0,ts=1,beamK=1,flashK=0,combo=0,lastP=0,introK=0,rv=0,doorB=0,pxB=500,room='stage',skyK=0,dk=0,dkS=0,cs=1,skyT=0,flashHold=0,rush=0,gk=1,lampX=0;
 const capS=new Spring(0,520,32),sq=new Spring(0,260,13),fovS=new Spring(0,300,16),par={x:0,y:0,tx:0,ty:0},cb={};
 const moods={playful:0xff2a14,nervous:0xff8a2a,smug:0xd02aff,lonely:0x3a7bff};
 const ripple=()=>dU.rip.value=dU.t.value;
@@ -140,35 +143,38 @@ addEventListener('pointerup',up);
 addEventListener('pointermove',e=>{par.tx=e.clientX/innerWidth*2-1;par.ty=e.clientY/innerHeight*2-1;if(e.pointerType==='touch')return;const h=hit(e);if(h!==hovered){hovered=h;cv.style.cursor=h?'pointer':'default';if(!held)capS.t=h?.05:0}});
 addEventListener('keydown',e=>{if(!e.repeat&&(e.key===' '||e.key==='Enter')&&e.target===document.body){e.preventDefault();down()}});
 addEventListener('keyup',e=>{if(e.key===' '||e.key==='Enter')up()});
-function resize(){renderer.setSize(innerWidth,innerHeight);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();const px=innerHeight*renderer.getPixelRatio()*.62;pts.material.uniforms.px.value=px;motes.material.uniforms.px.value=px}
+function resize(){renderer.setSize(innerWidth,innerHeight);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();const px=innerHeight*renderer.getPixelRatio()*.62;pxB=px;motes.material.uniforms.px.value=px}
 addEventListener('resize',resize);resize();
 /* loop */
-const flashEl=$('flash');let fF=0,fps=60;const Q={n:0,s:0},clk=new T.Clock(),LK=new T.Vector3(0,.65,0);
+const flashEl=$('flash');let fF=0,fps=60;const Q={n:0,s:0},clk=new T.Clock(),LK=new T.Vector3(0,.65,0),LKt=new T.Vector3(),DC=new T.Vector3(-4.4,1.7,-.4),DP=new T.Vector3(-4.4,1.6,-2.6);
 function frame(){
  const raw=clk.getDelta();ts=Math.min(1,ts+raw*1.3);const dt=Math.min(raw,.033)*ts,t=dU.t.value+=dt;mt+=dt*(1+heat*5);const mu=motes.material.uniforms;mu.t.value=mt;mu.pull.value=heat*heat;mu.kk.value=Math.min(1.5,spotK*beamK);cone.material.uniforms.t.value=t;cone.material.uniforms.rv.value=rv;
  if(litK>.9&&++Q.n>20&&Q.n<=110){Q.s+=raw;if(Q.n===110&&Q.s/90>.021){renderer.setPixelRatio(1);renderer.shadowMap.enabled=false;spot.castShadow=false;scene.traverse(o=>{if(o.material)o.material.needsUpdate=true});resize()}}
  for(let i=tw.length-1;i>=0;i--){const a=tw[i];a.t+=dt;const k=Math.min(1,a.t/a.dur);a.f(a.e(k),k);if(k>=1){tw.splice(i,1);a.done&&a.done()}}
  capS.step(dt);sq.step(dt);fovS.step(dt);par.x+=(par.tx-par.x)*.05;par.y+=(par.ty-par.y)*.05;
- heat=Math.max(0,heat-dt*.4);beamK+=(1-beamK)*Math.min(1,dt*1.6);flashK*=Math.pow(.01,raw);fps=fps*.95+.05/Math.max(raw,.001);doorL.intensity=doorB*litK;lightP.material.color.copy(lightC).multiplyScalar(litK);pulse*=Math.pow(.04,dt);shake*=Math.pow(.003,dt);
+ heat=Math.max(0,heat-dt*.4);beamK+=(1-beamK)*Math.min(1,dt*1.6);flashK*=Math.pow(.01,raw);flashK=Math.max(flashK,flashHold);fps=fps*.95+.05/Math.max(raw,.001);doorL.intensity=doorB*litK;lightP.material.color.copy(lightC).multiplyScalar(litK);pulse*=Math.pow(.04,dt);shake*=Math.pow(.003,dt);
  cap.position.y=.3+Math.min(.08,capS.x);
  const hb=1+.012*Math.sin(t*2.2)+.02*pulse;btnG.position.y=hopY+lift;btnG.scale.set((1+sq.x*.45)*gk*hb,(1-sq.x)*gk*hb,(1+sq.x*.45)*gk*hb);
  capMat.emissiveIntensity=litK*(.4+.15*Math.sin(t*2.2)+heat*1.6+pulse*1.2);
  halo.material.opacity=litK*Math.min(1,.28+.08*Math.sin(t*2.2)+heat*.4+pulse*.35);halo.scale.setScalar(3.4+heat*2.5+pulse*2);
  glowL.intensity=litK*(1.6+.3*Math.sin(t*2.2)+heat*3+pulse*5+(held?1:0));glowL.position.set(btnG.position.x,.5+hopY,btnG.position.z);
  dU.glow.value=litK*(.7+.15*Math.sin(t*2.2)+heat*1.1+pulse);decal.position.x=btnG.position.x;decal.position.z=btnG.position.z;
- spot.intensity=3.6*spotK*beamK*(1+heat*.25);cone.material.uniforms.k.value=spotK*(.6+.4*beamK)*(1+heat*.6);rimS.intensity=2.4*Math.min(spotK,1.2);{const eK=Math.min(1,spotK);envMats.forEach(([m,b])=>m.envMapIntensity=b*eK);hemi.intensity=.02*spotK}
+ spot.intensity=3.6*spotK*beamK*(1+heat*.25);cone.material.uniforms.k.value=spotK*(.6+.4*beamK)*(1+heat*.6);rimS.intensity=2.4*Math.min(spotK,1.2);skyT+=dt*cs;dkS+=(dk-dkS)*Math.min(1,dt*.8);skyU.t.value=skyT;skyU.k.value=dkS;skyU.fd.value=skyK;skyU.sd.value.set(.14,.075-dkS*.14,-1).normalize();sun.position.copy(skyU.sd.value).multiplyScalar(30);sun.intensity=2.4*skyK*Math.max(0,1-dkS*1.1);{const eK=Math.min(1,Math.max(spotK,skyK*.5));envMats.forEach(([m,b])=>m.envMapIntensity=b*eK);hemi.intensity=.02*spotK+.5*skyK*(1-dkS*.6)}
  spot.position.x=lampX;coneG.position.x=lampX;coneG.rotation.z=-Math.atan(lampX/10);
- const dist=(11.5+12*(1-introK))*(1+Math.max(0,1-cam.aspect)*.7),c=Math.cos(roll);
- cam.position.set((par.x*.7+Math.sin(t*.2)*.35)*c+(Math.random()-.5)*shake,2.4+(1-introK)*.9+par.y*.3*c+dolly*1.6+(Math.random()-.5)*shake,dist+dolly*1.5);
- LK.y=.65+(1-introK)*3.6;cam.up.set(-Math.sin(roll),Math.cos(roll),0);cam.lookAt(LK);cam.fov=30+fovS.x;cam.updateProjectionMatrix();
+ const S_=room==='sky',asp=Math.max(cam.aspect,.3),fv=30+Math.max(0,1-cam.aspect)*22,base=(S_?18:12.5)/(2*asp*Math.tan(fv*Math.PI/360)),K=base/11.5,dist=base*(S_?1:1+1.04*(1-introK))*(1-.18*heat),c=Math.cos(roll);scene.fog.density=.35/dist;pts.material.uniforms.px.value=mu.px.value=pxB*K;
+ cam.position.set((par.x*.7+Math.sin(t*.2)*.35)*K*c+(Math.random()-.5)*shake*K,(S_?1.45:(2.4+(1-introK)*.9)*K)+par.y*.3*K*c+dolly*1.6*K+(Math.random()-.5)*shake*K,dist+dolly*1.5*K);
+ LK.y=S_?1.7:.65+(1-introK)*3.6*K;cam.up.set(-Math.sin(roll),Math.cos(roll),0);LKt.copy(LK);if(rush>0){cam.position.lerp(DC,rush);LKt.lerp(DP,rush)}cam.lookAt(LKt);cam.fov=fv+fovS.x;cam.updateProjectionMatrix();
  const g=-2.2*Math.cos(roll);let alive=0;
  for(let i=0;i<N;i++){if(pl[i]>0){alive=1;pl[i]-=dt*.8;pv[i*3+1]+=g*dt*.6;pp[i*3]+=pv[i*3]*dt;pp[i*3+1]+=pv[i*3+1]*dt;pp[i*3+2]+=pv[i*3+2]*dt;pv[i*3]*=.985;pv[i*3+2]*=.985;pa[i]=Math.max(0,pl[i])*.9}else pa[i]=0}
  if(alive||pts.userData.d){pg.attributes.position.needsUpdate=pg.attributes.a.needsUpdate=pg.attributes.s.needsUpdate=pg.attributes.c.needsUpdate=true;pts.userData.d=alive}
  {const fl=Math.round(flashK*50)/50;if(fl!==fF){fF=fl;flashEl.style.opacity=Math.min(1,fl)}}renderer.render(scene,cam);requestAnimationFrame(frame)}
-function begin(long,done){
+function setRoom(n){room=n;const s=n==='sky';floor.visible=!s;coneG.visible=!s;motes.visible=!s;sky.visible=s;doorG.visible=!s&&doorB>0;if(s)spotK=0;hemi.color.set(s?0xff9a70:0x3a4a66);hemi.groundColor.set(s?0x2a1a2e:0x000000)}
+function travel(n,done){busy=true;sfx(80,900,2.2,'sawtooth',.06);swell(60,400,2.2,.3);go(2.4,e=>{rush=e*e;flashHold=Math.max(0,(e-.55)/.45)},E.lin,()=>{setRoom(n);rush=0;skyK=0;introK=1;litK=1;go(3,e=>skyK=e,E.io);go(2.2,e=>flashHold=1-e,E.out,()=>{flashHold=0;busy=false;done&&done()})})}
+function begin(long,done,rm){
  const at=(ms,f)=>setTimeout(f,ms);let started=false;
  sayEl.textContent='Click anywhere to begin';sayEl.classList.add('on');
  const start=()=>{if(started)return;started=true;sayEl.classList.remove('on');try{ac=ac||new AudioContext();ac.resume()}catch(e){}
+  if(rm==='sky'){litK=1;introK=1;rv=1;swell(60,110,2.5,.06);go(3,e=>skyK=e,E.io,()=>done&&done());return}
   const D=long?6300:2200;
   if(long){swell(38,52,5,.12);at(1300,()=>sfx(2400,1800,.015,'square',.03));
    [2600,3450,4200,4850].forEach((m,i)=>{at(m,()=>sfx(62,34,.2,'sine',.18+i*.07));at(m+150,()=>sfx(55,32,.18,'sine',.1+i*.05))});
@@ -185,7 +191,7 @@ renderer.compile(scene,cam);frame();
 let sayT;const sayEl=$('say');function sayF(t,ms=2600){clearTimeout(sayT);sayEl.classList.remove('on');if(!t)return;setTimeout(()=>{sayEl.textContent=t;sayEl.classList.add('on')},120);sayT=setTimeout(()=>sayEl.classList.remove('on'),ms)}
 return{
  onPress:f=>cb.press=f,onCaught:f=>cb.caught=f,
- say:sayF,begin,fps:()=>Math.round(fps)+(spot.castShadow?'':' lite'),
+ say:sayF,begin,setRoom,travel,dusk(v){dk=v;swell(220,330,2,.04)},clouds(){go(4,(e,k)=>cs=1+7*Math.sin(Math.PI*k),E.lin,()=>cs=1);sfx(200,100,2,'sine',.03)},fps:()=>Math.round(fps)+(spot.castShadow?'':' lite'),
  setFlip(b,instant){if(b===flipped&&!instant)return;flipped=b;const from=roll,to=b?Math.PI:0;
   if(instant){roll=to;return}sfx(90,380,1.2,'sine',.14);go(1.6,(e,k)=>{roll=from+(to-from)*e;dolly=Math.sin(Math.PI*k);lift=Math.sin(Math.PI*k)*1.2},E.io,()=>{lift=0;dolly=0;sq.v=6;emit(btnG.position,24,2,SPARK);bump(.12)})},
  flee(n=3){dodges=n;hop(rnd())},
@@ -199,7 +205,7 @@ return{
  door(mode){
   if(mode==='show'){doorG.visible=true;sfx(60,35,1.2,'sine',.4);bump(.3);go(2,e=>{doorG.position.y=-4+4*e;doorB=1.2*e},E.out,()=>{emit(wp(-4.4,.1,-2.6),40,2.4,DUST);bump(.15)})}
   if(mode==='open'){sfx(70,120,1.4,'sawtooth',.06);go(1.8,e=>{pivot.rotation.y=-1.9*e;doorB=1.2+3*e},E.io,()=>emit(wp(-3.6,.4,-1.8),30,2,WARM))}},
- setPresent(s){this.setFlip(s.tags.has('gravity_flipped'),true);if(s.tags.has('big'))gk=1.7;if(s.tags.has('door_present')){doorG.visible=true;doorG.position.y=0;doorB=1.2}if(s.tags.has('door_open')){pivot.rotation.y=-1.9;doorB=4.2}},
+ setPresent(s){this.setFlip(s.tags.has('gravity_flipped'),true);if(s.room==='sky'){setRoom('sky');dk=dkS=s.n.dusk||0}if(s.tags.has('big'))gk=1.7;if(s.tags.has('door_present')){doorG.visible=true;doorG.position.y=0;doorB=1.2}if(s.tags.has('door_open')){pivot.rotation.y=-1.9;doorB=4.2}},
  setMood(m){const c=lin(moods[m]||moods.playful);dU.col.value.copy(c);glowL.color.copy(c)},
  debug(h){$('dbg').innerHTML=h}
 }})();
@@ -209,8 +215,8 @@ const KEY='redbutton:v3';
 const Store={load(){try{return JSON.parse(localStorage.getItem(KEY))}catch(e){return null}},save(d){try{localStorage.setItem(KEY,JSON.stringify(d))}catch(e){}},wipe(){try{localStorage.removeItem(KEY)}catch(e){}}};
 let saved=Store.load();
 const M=saved?.M||{first:Date.now(),last:Date.now(),visits:0,total:0,counts:{}};
-const S={tags:new Set(saved?.tags||[]),n:saved?.n||{knocks:0,doorPresses:0,mentionedDoor:0,nothingRun:0,sinceBig:99},hist:saved?.hist||[],since:saved?.since||{}};
-const persist=()=>{M.last=Date.now();Store.save({M,tags:[...S.tags],n:S.n,hist:S.hist,since:S.since})};
+const S={tags:new Set(saved?.tags||[]),n:saved?.n||{knocks:0,doorPresses:0,mentionedDoor:0,nothingRun:0,sinceBig:99},hist:saved?.hist||[],since:saved?.since||{},room:saved?.room||'stage'};
+const persist=()=>{M.last=Date.now();Store.save({M,tags:[...S.tags],n:S.n,hist:S.hist,since:S.since,room:S.room})};
 
 /* ============ 3. PERSONALITY ============ */
 function mood(){
@@ -218,7 +224,7 @@ function mood(){
   const score={playful:.5+Object.keys(M.counts).length*.08,nervous:(S.tags.has('thing_below')?1.2:0)+(S.tags.has('suspicious')?.8:0),smug:M.total/50,lonely:hrsAway/10};
   return Object.entries(score).sort((a,b)=>b[1]-a[1])[0][0];
 }
-const L4=(a,b,c,d)=>({playful:[a],nervous:[b],smug:[c],lonely:[d]});const LINES={swing:L4('Wheee.','Stop the lamp!','Watch the shadows.','Even the light moves on.'),grow:L4('Bigger!','Is it me, or…','Behold.','Big. Still alone.'),shrink:L4('Back to size.','Too much. Too much.','Humble again.','Smaller. Quieter.'),orbit:L4('Ooh, friends.','Who invited them?','Admire them.','They keep me company.'),
+const L4=(a,b,c,d)=>({playful:[a],nervous:[b],smug:[c],lonely:[d]});const LINES={travel:L4('Hold on to something.','Wait, wait, where—','Come along.','Take me with you.'),ask:L4('Where are we, anyway?','Where… are we?','Tell me where we are.','Where are you, out there?'),dusk:L4('Look at that.','It’s getting late.','Ah. Evening.','Stay a little longer.'),clouds:L4('Clouds!','Is that weather?','The sky does what it likes.','They’ll be gone soon.'),done:L4('That’s as far as this build goes.','That’s all I have. Really.','The rest is yet to come.','Come back soon.'),locOk:L4('Nice place.','Noted. Don’t tell anyone.','Got it.','So that’s where you are.'),locNo:L4('Fine. I’ll guess.','Okay. A rough guess, then.','Suit yourself.','Never mind.'),swing:L4('Wheee.','Stop the lamp!','Watch the shadows.','Even the light moves on.'),grow:L4('Bigger!','Is it me, or…','Behold.','Big. Still alone.'),shrink:L4('Back to size.','Too much. Too much.','Humble again.','Smaller. Quieter.'),orbit:L4('Ooh, friends.','Who invited them?','Admire them.','They keep me company.'),
   nothing:{playful:['…','Nothing. Really.'],nervous:['Did you hear that? No. Nothing.'],smug:['Not everything is for you.'],lonely:['Still here.']},
   suspicious:{playful:['Nothing again. Suspicious?'],nervous:['Nothing. That is worse.'],smug:['You keep checking. Cute.'],lonely:['Nothing. Stay anyway.']},
   flee:{playful:['Catch me!'],nervous:['Nope nope nope.'],smug:['Try and keep up.'],lonely:['Come find me?']},
@@ -235,8 +241,13 @@ const pick=a=>a[Math.floor(Math.random()*a.length)];
 const talk=(k,ms)=>{const t=pick(LINES[k][mood()]);if(t)R.say(t,ms)};
 
 /* ============ 4. CONSEQUENCES ============ */
-const has=t=>S.tags.has(t);
+const has=t=>S.tags.has(t),room=()=>S.room;
+function requestLoc(){const fb=()=>{M.loc={lat:null,lon:-new Date().getTimezoneOffset()/4,approx:true};talk('locNo');persist()};
+ try{navigator.geolocation?navigator.geolocation.getCurrentPosition(p=>{M.loc={lat:+p.coords.latitude.toFixed(1),lon:+p.coords.longitude.toFixed(1)};talk('locOk');persist()},fb,{timeout:15000,maximumAge:3e6}):fb()}catch(e){fb()}}
 const C=[
+ {id:'ask',fam:'meta',w:12,cd:999,big:false,req:()=>!M.asked&&M.total>=6&&room()==='stage',play(){M.asked=1;talk('ask',2600);setTimeout(requestLoc,1500)}},
+ {id:'dusk',fam:'sky',rm:'sky',w:4,cd:2,big:false,req:()=>room()==='sky',play(){S.n.dusk=Math.min(1,(S.n.dusk||0)+.07);R.dusk(S.n.dusk);talk(S.n.dusk>=1?'done':'dusk',3200)}},
+ {id:'clouds',fam:'sky',rm:'sky',w:3,cd:6,big:false,req:()=>room()==='sky',play(){R.clouds();talk('clouds')}},
  {id:'swing',fam:'world',w:2,cd:9,big:true,req:()=>true,play(){R.swing();talk('swing')}},
  {id:'orbit',fam:'world',w:2,cd:10,big:true,req:()=>true,play(){R.orbit();talk('orbit')}},
  {id:'grow',fam:'button',w:2,cd:7,big:true,req:()=>true,play(){const b=!has('big');b?S.tags.add('big'):S.tags.delete('big');R.grow(b);talk(b?'grow':'shrink')}},
@@ -247,11 +258,12 @@ const C=[
  {id:'knock',fam:'mystery',w:4,cd:3,big:false,req:()=>has('thing_below')&&!has('door_present'),play(){S.n.knocks++;R.knock();talk('knock',1400)}},
  {id:'door',fam:'mystery',w:6,cd:5,big:true,req:()=>has('thing_below')&&!has('door_present')&&S.n.knocks>=3,play(){S.tags.add('door_present');R.door('show');talk('door',3200)}}
 ];
+[['nothing','stage'],['swing','stage'],['pressback','stage'],['knock','stage'],['door','stage'],['ask','stage']].forEach(([i,r])=>C.find(c=>c.id===i).rm=r);
 R.onCaught(()=>{S.tags.delete('button_fled');talk('caught');persist()});
 
 /* ============ 5. ENGINE ============ */
 function choose(){
-  const pool=C.filter(c=>c.req()&&(S.since[c.id]===undefined||M.total-S.since[c.id]>=c.cd));
+  const pool=C.filter(c=>(!c.rm||c.rm===room())&&c.req()&&(S.since[c.id]===undefined||M.total-S.since[c.id]>=c.cd));
   const quietBias=S.n.sinceBig<2;
   const weighted=pool.map(c=>{let w=c.w/(1+(M.counts[c.id]||0)*.12);if(quietBias)w*=c.big?.15:3;if(c.id==='nothing')w+=Math.max(0,3-S.n.sinceBig)*.4;return[c,w]});
   let r=Math.random()*weighted.reduce((a,[,w])=>a+w,0);
@@ -260,6 +272,7 @@ function choose(){
 }
 function onPress(){
   M.total++;R.setMood(mood());
+  if(has('door_open')&&room()==='stage'){talk('travel',2200);R.travel('sky',()=>{S.room='sky';persist();renderDebug()});return}
   if(has('door_present')&&!has('door_open')){
     S.n.doorPresses++;
     if(S.n.doorPresses===8&&!S.n.mentionedDoor){S.n.mentionedDoor=1;talk('doorHint',3200);persist();return}
@@ -278,14 +291,14 @@ R.onPress(onPress);
 /* ============ 6. BOOT ============ */
 R.setPresent(S);R.setMood(mood());
 let _m='Press it.';if(M.visits>0){const h=(Date.now()-M.last)/3.6e6,d=Math.floor(h/24);_m=h<1?'Back already.':d<1?'You came back.':d===1?'A day. You came back.':`${d} days. You came back.`}
-R.begin(M.visits===0,()=>R.say(_m,3200));
+R.begin(M.visits===0,()=>R.say(_m,3200),S.room);
 M.visits++;persist();
 addEventListener('visibilitychange',persist);
 
 /* ============ 7. DEBUG ============ */
 function renderDebug(){
-  R.debug(`<b>presses</b> ${M.total} · <b>mood</b> ${mood()} · <b>fps</b> ${R.fps()}<br><b>tags</b> ${[...S.tags].join(', ')||'none'}<br><b>recent</b> ${S.hist.slice(-8).join(' → ')||'—'}<br><b>first press</b> ${new Date(M.first).toLocaleDateString()}<br><button id="reset">reset world</button>`);
-  const b=document.getElementById('reset');if(b)b.onclick=()=>{Store.wipe();location.reload()};
+  R.debug(`<b>presses</b> ${M.total} · <b>mood</b> ${mood()} · <b>fps</b> ${R.fps()}<br><b>room</b> ${S.room} · <b>loc</b> ${M.loc?(M.loc.lat===null?'approx lon '+M.loc.lon:M.loc.lat+', '+M.loc.lon):'none'}<br><b>tags</b> ${[...S.tags].join(', ')||'none'}<br><b>recent</b> ${S.hist.slice(-8).join(' → ')||'—'}<br><b>first press</b> ${new Date(M.first).toLocaleDateString()}<br><button id="reset">reset world</button> <button id="jmp">jump: sky</button> <button id="clr">clear location</button>`);
+  const b=document.getElementById('reset');if(b)b.onclick=()=>{Store.wipe();location.reload()};const j=document.getElementById('jmp');if(j)j.onclick=()=>{S.room='sky';persist();location.reload()};const cl=document.getElementById('clr');if(cl)cl.onclick=()=>{delete M.loc;M.asked=0;persist();renderDebug()};
 }
 document.getElementById('dbgBtn').onclick=()=>{document.getElementById('dbg').classList.toggle('on');renderDebug()};
 </script>
